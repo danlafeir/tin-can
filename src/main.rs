@@ -25,7 +25,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Commands::AttachString => cmd_attach_string(),
-        Commands::Join { code } => cmd_join(&code),
+        Commands::Text { code } => cmd_text(&code),
         Commands::Talk { code } => cmd_talk(code.as_deref()),
     }
 }
@@ -45,7 +45,7 @@ fn cmd_attach_string() -> Result<()> {
     println!("\nShare this URL with your peer:");
     println!("  {}", offer_url);
     println!("\nThey can open it in a browser or run:");
-    println!("  tin-can join \"{}\"", offer_url);
+    println!("  tin-can text \"{}\"", offer_url);
     println!("\nPaste their answer URL (or base64) here and press Enter:");
 
     let answer_input = read_line()?;
@@ -60,16 +60,16 @@ fn cmd_attach_string() -> Result<()> {
     peer::run(rtc, socket, local_addr, rx, None)
 }
 
-fn cmd_join(input: &str) -> Result<()> {
+fn cmd_text(input: &str) -> Result<()> {
     if input.starts_with("http://") || input.starts_with("https://") {
-        join_from_url(input)
+        text_from_url(input)
     } else {
-        join_from_code(input)
+        text_from_code(input)
     }
 }
 
-/// Join using a daniellafeir.com/can/#o=... URL (no relay needed).
-fn join_from_url(url: &str) -> Result<()> {
+/// Connect using a daniellafeir.com/can/#o=... URL (no relay needed).
+fn text_from_url(url: &str) -> Result<()> {
     let offer = signal::offer_from_url(url).context("decode offer from URL")?;
 
     println!("Gathering network candidates...");
@@ -89,8 +89,8 @@ fn join_from_url(url: &str) -> Result<()> {
     peer::run(rtc, socket, local_addr, rx, None)
 }
 
-/// Join using a relay room code (requires relay backend to be deployed).
-fn join_from_code(code: &str) -> Result<()> {
+/// Connect using a relay room code (requires relay backend to be deployed).
+fn text_from_code(code: &str) -> Result<()> {
     println!("Fetching room {}...", code);
     let relay = relay::RelayClient::new();
     let offer_b64 = relay.get_offer(code).context("fetch offer")?;
@@ -133,7 +133,7 @@ fn talk_create(audio: audio::AudioPipeline) -> Result<()> {
     println!("\nShare this URL with your peer:");
     println!("  {}", offer_url);
     println!("\nThey can open it in a browser or run:");
-    println!("  tin-can join \"{}\"", offer_url);
+    println!("  tin-can talk \"{}\"", offer_url);
     println!("\nPaste their answer URL (or base64) here and press Enter:");
 
     let answer_input = read_line()?;

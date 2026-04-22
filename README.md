@@ -59,7 +59,7 @@ Share this URL with your peer:
   https://daniellafeir.com/can/#o=eyJ0eXBl...
 
 They can open it in a browser or run:
-  tin-can join "https://daniellafeir.com/can/#o=eyJ0eXBl..."
+  tin-can text "https://daniellafeir.com/can/#o=eyJ0eXBl..."
 
 Paste their answer URL (or base64) here and press Enter:
 >
@@ -70,7 +70,7 @@ Send the URL to your peer however you like — text, email, anything. The SDP da
 **Join a chat (your peer goes first):**
 
 ```sh
-tin-can join "https://daniellafeir.com/can/#o=eyJ0eXBl..."
+tin-can text "https://daniellafeir.com/can/#o=eyJ0eXBl..."
 ```
 
 This prints an answer URL. Send it back. Once your peer pastes it, you're connected.
@@ -109,7 +109,7 @@ Alice                              Bob
   │── tin-can attach-string         │
   │   generates SDP offer           │
   │   encodes in URL ───────────►   │
-  │                          opens URL / runs tin-can join
+  │                          opens URL / runs tin-can text
   │                          generates SDP answer
   │   ◄──────────────── answer URL  │
   │   accepts answer                │
