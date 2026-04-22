@@ -23,6 +23,7 @@ pub fn run(
     local_addr: SocketAddr,
     rx: mpsc::Receiver<Option<String>>,
     mut audio: Option<AudioPipeline>,
+    is_answerer: bool,
 ) -> Result<()> {
     let mut buf = vec![0u8; 2000];
     let mut channel: Option<ChannelId> = None;
@@ -39,7 +40,7 @@ pub fn run(
                         .context("UDP send")?;
                 }
                 Output::Event(event) => {
-                    handle_event(event, &mut channel, &mut connected, &mut audio)?;
+                    handle_event(event, &mut channel, &mut connected, &mut audio, is_answerer)?;
                 }
                 Output::Timeout(deadline) => break deadline,
             }
@@ -130,6 +131,7 @@ fn handle_event(
     channel: &mut Option<ChannelId>,
     connected: &mut bool,
     audio: &mut Option<AudioPipeline>,
+    is_answerer: bool,
 ) -> Result<()> {
     match event {
         Event::Connected => {
@@ -145,7 +147,10 @@ fn handle_event(
         Event::ChannelOpen(cid, label) => {
             info!("channel open: '{}' ({:?})", label, cid);
             *channel = Some(cid);
-            if audio.is_some() {
+            if is_answerer {
+                let mode = if label.contains("voice") { "talk (voice call)" } else { "tap (morse text)" };
+                println!("Your peer wants to {}. Type a message to accept and start, or Ctrl-D to exit.\n", mode);
+            } else if audio.is_some() {
                 println!("Connected! Speak freely. Type a message to send text. Ctrl-D or /quit to exit.\n");
             } else {
                 println!("Connected! Type a message and press Enter. Ctrl-D or /quit to exit.\n");

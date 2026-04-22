@@ -9,8 +9,8 @@ const STUN_SERVER: &str = "stun.l.google.com:19302";
 const STUN_TIMEOUT: Duration = Duration::from_secs(3);
 
 /// Bind a UDP socket and gather host + optional STUN server-reflexive candidates.
-/// Returns the socket (to be used for the WebRTC loop) and the candidate list.
-pub fn gather() -> Result<(UdpSocket, Vec<Candidate>)> {
+/// Returns the socket, the real local address (for use in Receive::new), and candidates.
+pub fn gather() -> Result<(UdpSocket, SocketAddr, Vec<Candidate>)> {
     let socket = UdpSocket::bind("0.0.0.0:0").context("bind UDP socket")?;
     let port = socket.local_addr().context("get local addr")?.port();
 
@@ -48,7 +48,7 @@ pub fn gather() -> Result<(UdpSocket, Vec<Candidate>)> {
     // Restore blocking mode after STUN query modified the timeout
     socket.set_read_timeout(None).ok();
 
-    Ok((socket, candidates))
+    Ok((socket, local_addr, candidates))
 }
 
 /// Sends a minimal STUN Binding Request and parses the XOR-MAPPED-ADDRESS from the response.
