@@ -13,18 +13,33 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Create a text chat room and get a code to share with your peer
-    AttachString,
+    /// Create a text chat session
+    AttachString {
+        /// Use copy/paste URL signaling via daniellafeir.com instead of the relay
+        #[arg(long)]
+        static_link: bool,
 
-    /// Start a text chat by joining a peer's URL or room code
-    Text {
-        /// URL or room code from your peer
-        code: String,
+        /// Shared secret (relay mode only — omit with --static-link)
+        secret: Option<String>,
     },
 
-    /// Start a voice call — omit code to create a room, provide one to join
+    /// Join a text chat session
+    Text {
+        /// Use copy/paste URL signaling via daniellafeir.com instead of the relay
+        #[arg(long)]
+        static_link: bool,
+
+        /// Shared secret (relay mode) or offer URL (--static-link mode)
+        value: Option<String>,
+    },
+
+    /// Start or join a voice call
     Talk {
-        /// Room code from your peer (omit to create a new room)
-        code: Option<String>,
+        /// Use copy/paste URL signaling via daniellafeir.com instead of the relay
+        #[arg(long)]
+        static_link: bool,
+
+        /// Shared secret (relay mode) or offer URL to join (--static-link mode)
+        value: Option<String>,
     },
 }

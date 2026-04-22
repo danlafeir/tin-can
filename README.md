@@ -2,7 +2,7 @@
 
 Peer-to-peer terminal communication. Two cans, one string — direct encrypted text chat and voice calls, no accounts or servers.
 
-Connections are established by exchanging a URL. One peer generates a link, sends it to the other, and they're connected directly over WebRTC.
+Both peers agree on a shared secret. One starts the session, the other joins with the same secret. That's it.
 
 ---
 
@@ -44,57 +44,30 @@ The release binary is self-contained — libopus is statically linked. No Homebr
 
 ## Usage
 
+Both peers just need to agree on a secret phrase — say it over the phone, text it, anything.
+
 ### Text chat
 
-**Start a chat (you go first):**
-
 ```sh
-tin-can attach-string
+# Peer A — create the session
+tin-can attach-string "our secret phrase"
+
+# Peer B — join it
+tin-can text "our secret phrase"
 ```
 
-This prints a URL like:
-
-```
-Share this URL with your peer:
-  https://daniellafeir.com/can/#o=eyJ0eXBl...
-
-They can open it in a browser or run:
-  tin-can text "https://daniellafeir.com/can/#o=eyJ0eXBl..."
-
-Paste their answer URL (or base64) here and press Enter:
->
-```
-
-Send the URL to your peer however you like — text, email, anything. The SDP data lives only in the URL fragment and never touches any server.
-
-**Join a chat (your peer goes first):**
-
-```sh
-tin-can text "https://daniellafeir.com/can/#o=eyJ0eXBl..."
-```
-
-This prints an answer URL. Send it back. Once your peer pastes it, you're connected.
-
-If your peer opens the URL in a browser, [daniellafeir.com/can/](https://daniellafeir.com/can/) shows the exact command to run.
-
----
+Peer A prints a message telling them to wait. Once Peer B runs their command, both are connected.
 
 ### Voice call
 
 Requires `--features voice` build and `brew install opus`.
 
-**Start a call:**
-
 ```sh
-tin-can talk
-```
+# Either peer runs this first — whoever goes first creates the session
+tin-can talk "our secret phrase"
 
-Works the same way as `attach-string` — prints a URL, waits for the peer's answer URL.
-
-**Join a call:**
-
-```sh
-tin-can talk "https://daniellafeir.com/can/#o=eyJ0eXBl..."
+# The other peer runs the same command to join
+tin-can talk "our secret phrase"
 ```
 
 You can still type text messages during a voice call.
@@ -104,20 +77,23 @@ You can still type text messages during a voice call.
 ## How it works
 
 ```
-Alice                              Bob
-  │                                 │
-  │── tin-can attach-string         │
-  │   generates SDP offer           │
-  │   encodes in URL ───────────►   │
-  │                          opens URL / runs tin-can text
-  │                          generates SDP answer
-  │   ◄──────────────── answer URL  │
-  │   accepts answer                │
-  │                                 │
-  │◄══════ WebRTC (direct UDP) ════►│
+Alice                                     Bob
+  │                                        │
+  │── tin-can attach-string "secret"       │
+  │   hashes secret → room code            │
+  │   generates SDP offer                  │
+  │   uploads offer to lafeir.com ──────►  │
+  │   polls for answer...           tin-can text "secret"
+  │                                 hashes secret → same room code
+  │                                 fetches offer from lafeir.com
+  │                                 generates SDP answer
+  │   ◄────────── answer uploaded   uploads answer to lafeir.com
+  │   accepts answer                       │
+  │                                        │
+  │◄══════════ WebRTC (direct UDP) ═══════►│
 ```
 
-- **Signaling**: SDP offer/answer exchanged via URL fragment at [daniellafeir.com/can/](https://daniellafeir.com/can/). The fragment is never sent to the server.
+- **Signaling**: SDP offer/answer relayed through [lafeir.com](https://lafeir.com) — blobs expire after 10 minutes. The room code is a hash of the secret; the secret itself never leaves your machine.
 - **Transport**: Direct UDP between peers (WebRTC via [str0m](https://github.com/algesten/str0m))
 - **Encryption**: DTLS-SRTP (built into WebRTC)
 - **NAT traversal**: STUN via `stun.l.google.com`
