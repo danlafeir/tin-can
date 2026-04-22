@@ -1,5 +1,11 @@
 APP_NAME  = tin-can
 BUILD_DIR = bin
+CARGO     ?= $(shell command -v cargo 2>/dev/null || echo $(HOME)/.cargo/bin/cargo)
+RUSTUP    ?= $(shell command -v rustup 2>/dev/null || echo $(HOME)/.cargo/bin/rustup)
+
+# cmake 4.x dropped support for cmake_minimum_required(VERSION < 3.5).
+# audiopus_sys bundles opus source that declares VERSION 3.1, so we override.
+export CMAKE_POLICY_VERSION_MINIMUM = 3.5
 
 OS        = $(shell uname -s | tr '[:upper:]' '[:lower:]')
 ARCH      = $(shell uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
@@ -16,18 +22,10 @@ all: build
 build:
 	@echo "Building $(APP_NAME) for $(OS)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
-	cargo build --release --features voice
+	$(CARGO) build --release --features voice
 	cp target/release/$(APP_NAME) $(BUILD_DIR)/$(APP_NAME)
 	cp target/release/$(APP_NAME) $(BUILD_DIR)/$(BINARY_NAME)
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)"
-
-# Voice requires opus — macOS only, build locally
-build-voice:
-	@echo "Building $(APP_NAME) with voice for $(OS)/$(ARCH)..."
-	@mkdir -p $(BUILD_DIR)
-	cargo build --release --features voice
-	cp target/release/$(APP_NAME) $(BUILD_DIR)/$(APP_NAME)-voice-$(OS)-$(ARCH)-$(GIT_HASH)
-	@echo "Built: $(BUILD_DIR)/$(APP_NAME)-voice-$(OS)-$(ARCH)-$(GIT_HASH)"
 
 # ── Cross-platform release build ─────────────────────────────────────────────
 # Prerequisites:
@@ -40,17 +38,17 @@ build-all:
 	@mkdir -p $(BUILD_DIR)
 
 	@# Current platform (convenience copy for local use)
-	cargo build --release --features voice
+	$(CARGO) build --release --features voice
 	cp target/release/$(APP_NAME) $(BUILD_DIR)/$(APP_NAME)
 
 	@# macOS ARM64
-	rustup target add aarch64-apple-darwin 2>/dev/null; \
-	cargo build --release --features voice --target aarch64-apple-darwin
+	$(RUSTUP) target add aarch64-apple-darwin 2>/dev/null; \
+	$(CARGO) build --release --features voice --target aarch64-apple-darwin
 	cp target/aarch64-apple-darwin/release/$(APP_NAME) $(BUILD_DIR)/$(APP_NAME)-darwin-arm64-$(GIT_HASH)
 
 	@# macOS AMD64
-	rustup target add x86_64-apple-darwin 2>/dev/null; \
-	cargo build --release --features voice --target x86_64-apple-darwin
+	$(RUSTUP) target add x86_64-apple-darwin 2>/dev/null; \
+	$(CARGO) build --release --features voice --target x86_64-apple-darwin
 	cp target/x86_64-apple-darwin/release/$(APP_NAME) $(BUILD_DIR)/$(APP_NAME)-darwin-amd64-$(GIT_HASH)
 
 	@# Linux — static musl binaries via cross (needs Docker)
@@ -78,10 +76,10 @@ clean:
 	rm -rf $(BUILD_DIR)
 
 test:
-	cargo test
+	$(CARGO) test
 
 run:
-	cargo run -- $(ARGS)
+	$(CARGO) run -- $(ARGS)
 
 # ── Deploy ────────────────────────────────────────────────────────────────────
 # Runs tests, builds all platforms, commits binaries, and pushes.

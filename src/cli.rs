@@ -4,7 +4,8 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "tin-can",
     about = "P2P terminal communication — two cans, one string",
-    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")")
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")"),
+    disable_help_subcommand = true
 )]
 pub struct Cli {
     #[command(subcommand)]

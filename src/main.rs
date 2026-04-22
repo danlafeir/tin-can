@@ -73,30 +73,36 @@ fn attach_string_relay(secret: &str) -> Result<()> {
     let code = signal::derive_room_code(secret);
     let relay = relay::RelayClient::new();
 
+    println!("  room code: {}", code);
+
     match relay.try_get_offer(&code).context("check for session")? {
         Some(offer_b64) => {
             let offer = signal::decode_offer(&offer_b64).context("decode offer")?;
 
-            println!("Found session. Gathering network candidates...");
+            println!("Found session — joining as answerer. Gathering network candidates...");
             let (socket, local_addr, candidates) = ice::gather().context("ICE gather")?;
+            println!("  local addr: {}  candidates: {}", local_addr, candidates.len());
 
             let (rtc, answer) = peer::build_answerer(candidates, offer).context("build answerer")?;
             let answer_b64 = signal::encode_answer(&answer).context("encode answer")?;
-            relay.put_answer(&code, &answer_b64).context("upload answer")?;
+            relay.put_knot_tie(&code, &answer_b64).context("upload answer")?;
+            println!("  knot-tie sent to relay");
 
             println!("Connecting...");
             let rx = chat::spawn_input_thread();
             peer::run(rtc, socket, local_addr, rx, None, true)
         }
         None => {
-            println!("Gathering network candidates...");
+            println!("No session found — starting as offerer. Gathering network candidates...");
             let (socket, local_addr, candidates) = ice::gather().context("ICE gather")?;
+            println!("  local addr: {}  candidates: {}", local_addr, candidates.len());
 
             let (mut rtc, offer, pending, _cid) =
                 peer::build_offerer(candidates, "tin-can:text").context("build offerer")?;
 
             let offer_b64 = signal::encode_offer(&offer).context("encode offer")?;
             relay.upload_offer(&code, &offer_b64).context("upload offer")?;
+            println!("  offer uploaded to relay");
 
             println!("\nWaiting for peer... Tell them to run:");
             println!("  tin-can attach-string {:?}", secret);
@@ -116,30 +122,36 @@ fn tap_relay(secret: &str) -> Result<()> {
     let code = signal::derive_room_code(secret);
     let relay = relay::RelayClient::new();
 
+    println!("  room code: {}", code);
+
     match relay.try_get_offer(&code).context("check for session")? {
         Some(offer_b64) => {
             let offer = signal::decode_offer(&offer_b64).context("decode offer")?;
 
-            println!("Found session. Gathering network candidates...");
+            println!("Found session — joining as answerer. Gathering network candidates...");
             let (socket, local_addr, candidates) = ice::gather().context("ICE gather")?;
+            println!("  local addr: {}  candidates: {}", local_addr, candidates.len());
 
             let (rtc, answer) = peer::build_answerer(candidates, offer).context("build answerer")?;
             let answer_b64 = signal::encode_answer(&answer).context("encode answer")?;
-            relay.put_answer(&code, &answer_b64).context("upload answer")?;
+            relay.put_knot_tie(&code, &answer_b64).context("upload answer")?;
+            println!("  knot-tie sent to relay");
 
             println!("Connecting...");
             let rx = chat::spawn_input_thread();
             peer::run(rtc, socket, local_addr, rx, None, true)
         }
         None => {
-            println!("Gathering network candidates...");
+            println!("No session found — starting as offerer. Gathering network candidates...");
             let (socket, local_addr, candidates) = ice::gather().context("ICE gather")?;
+            println!("  local addr: {}  candidates: {}", local_addr, candidates.len());
 
             let (mut rtc, offer, pending, _cid) =
                 peer::build_offerer(candidates, "tin-can:text").context("build offerer")?;
 
             let offer_b64 = signal::encode_offer(&offer).context("encode offer")?;
             relay.upload_offer(&code, &offer_b64).context("upload offer")?;
+            println!("  offer uploaded to relay");
 
             println!("\nWaiting for peer... Tell them to run:");
             println!("  tin-can tap {:?}", secret);
@@ -160,30 +172,36 @@ fn talk_relay(secret: &str) -> Result<()> {
     let relay = relay::RelayClient::new();
     let audio = audio::AudioPipeline::new().context("start audio")?;
 
+    println!("  room code: {}", code);
+
     match relay.try_get_offer(&code).context("check for session")? {
         Some(offer_b64) => {
             let offer = signal::decode_offer(&offer_b64).context("decode offer")?;
 
-            println!("Found session. Gathering network candidates...");
+            println!("Found session — joining as answerer. Gathering network candidates...");
             let (socket, local_addr, candidates) = ice::gather().context("ICE gather")?;
+            println!("  local addr: {}  candidates: {}", local_addr, candidates.len());
 
             let (rtc, answer) = peer::build_answerer(candidates, offer).context("build answerer")?;
             let answer_b64 = signal::encode_answer(&answer).context("encode answer")?;
-            relay.put_answer(&code, &answer_b64).context("upload answer")?;
+            relay.put_knot_tie(&code, &answer_b64).context("upload answer")?;
+            println!("  knot-tie sent to relay");
 
             println!("Connecting...");
             let rx = chat::spawn_input_thread();
             peer::run(rtc, socket, local_addr, rx, Some(audio), true)
         }
         None => {
-            println!("Gathering network candidates...");
+            println!("No session found — starting as offerer. Gathering network candidates...");
             let (socket, local_addr, candidates) = ice::gather().context("ICE gather")?;
+            println!("  local addr: {}  candidates: {}", local_addr, candidates.len());
 
             let (mut rtc, offer, pending, _cid) =
                 peer::build_offerer(candidates, "tin-can:voice").context("build offerer")?;
 
             let offer_b64 = signal::encode_offer(&offer).context("encode offer")?;
             relay.upload_offer(&code, &offer_b64).context("upload offer")?;
+            println!("  offer uploaded to relay");
 
             println!("\nWaiting for peer... Tell them to run:");
             println!("  tin-can talk {:?}", secret);
@@ -296,17 +314,29 @@ fn talk_static(url: Option<&str>) -> Result<()> {
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 fn poll_for_answer(relay: &relay::RelayClient, code: &str) -> Result<String> {
+    const POLL_INTERVAL: Duration = Duration::from_secs(2);
+    const STATUS_EVERY: u32 = 15; // elapsed timestamp every ~30s
+
     print!("Waiting");
     io::stdout().flush().ok();
+
+    let started = std::time::Instant::now();
+    let mut ticks: u32 = 0;
     loop {
-        thread::sleep(Duration::from_secs(2));
-        match relay.poll_answer(code).context("poll for answer")? {
+        thread::sleep(POLL_INTERVAL);
+        match relay.poll_knot_tie(code).context("poll for knot-tie")? {
             Some(b64) => {
                 println!();
                 return Ok(b64);
             }
             None => {
-                print!(".");
+                ticks += 1;
+                if ticks % STATUS_EVERY == 0 {
+                    let secs = started.elapsed().as_secs();
+                    print!(" ({}:{:02})", secs / 60, secs % 60);
+                } else {
+                    print!(".");
+                }
                 io::stdout().flush().ok();
             }
         }
