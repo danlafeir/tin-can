@@ -16,7 +16,7 @@ all: build
 build:
 	@echo "Building $(APP_NAME) for $(OS)/$(ARCH)..."
 	@mkdir -p $(BUILD_DIR)
-	cargo build --release
+	cargo build --release --features voice
 	cp target/release/$(APP_NAME) $(BUILD_DIR)/$(APP_NAME)
 	cp target/release/$(APP_NAME) $(BUILD_DIR)/$(BINARY_NAME)
 	@echo "Built: $(BUILD_DIR)/$(BINARY_NAME)"
@@ -40,25 +40,25 @@ build-all:
 	@mkdir -p $(BUILD_DIR)
 
 	@# Current platform (convenience copy for local use)
-	cargo build --release
+	cargo build --release --features voice
 	cp target/release/$(APP_NAME) $(BUILD_DIR)/$(APP_NAME)
 
 	@# macOS ARM64
 	rustup target add aarch64-apple-darwin 2>/dev/null; \
-	cargo build --release --target aarch64-apple-darwin
+	cargo build --release --features voice --target aarch64-apple-darwin
 	cp target/aarch64-apple-darwin/release/$(APP_NAME) $(BUILD_DIR)/$(APP_NAME)-darwin-arm64-$(GIT_HASH)
 
 	@# macOS AMD64
 	rustup target add x86_64-apple-darwin 2>/dev/null; \
-	cargo build --release --target x86_64-apple-darwin
+	cargo build --release --features voice --target x86_64-apple-darwin
 	cp target/x86_64-apple-darwin/release/$(APP_NAME) $(BUILD_DIR)/$(APP_NAME)-darwin-amd64-$(GIT_HASH)
 
 	@# Linux — static musl binaries via cross (needs Docker)
 	@# Install with: cargo install cross
 	@if command -v cross >/dev/null 2>&1; then \
-		cross build --release --target x86_64-unknown-linux-musl && \
+		cross build --release --features voice --target x86_64-unknown-linux-musl && \
 		cp target/x86_64-unknown-linux-musl/release/$(APP_NAME) $(BUILD_DIR)/$(APP_NAME)-linux-amd64-$(GIT_HASH) && \
-		cross build --release --target aarch64-unknown-linux-musl && \
+		cross build --release --features voice --target aarch64-unknown-linux-musl && \
 		cp target/aarch64-unknown-linux-musl/release/$(APP_NAME) $(BUILD_DIR)/$(APP_NAME)-linux-arm64-$(GIT_HASH); \
 	else \
 		echo "  [skip] cross not found — Linux binaries not built (cargo install cross)"; \
