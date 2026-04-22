@@ -4,7 +4,7 @@ use clap::{Parser, Subcommand};
 #[command(
     name = "tin-can",
     about = "P2P terminal communication — two cans, one string",
-    version
+    version = concat!(env!("CARGO_PKG_VERSION"), " (", env!("GIT_HASH"), ")")
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -32,6 +32,9 @@ pub enum Commands {
         /// Shared secret (relay mode) or offer URL (--static-link mode)
         value: Option<String>,
     },
+
+    /// Download and install the latest release binary
+    Upgrade,
 
     /// Start or join a voice call
     Talk {

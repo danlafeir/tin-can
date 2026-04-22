@@ -24,3 +24,9 @@ target
 # Added by cargo
 
 /target
+
+# bin/ — platform-specific release binaries (bin/tin-can-<os>-<arch>-<hash>) are
+# committed to git so `tin-can upgrade` can fetch them from GitHub raw.
+# The bare local copies are not committed.
+/bin/tin-can
+/bin/tin-can-voice

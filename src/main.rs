@@ -52,6 +52,7 @@ fn main() -> Result<()> {
                 tap_relay(&s)
             }
         }
+        Commands::Upgrade => cmd_upgrade(),
         Commands::Talk { static_link, value } => {
             if static_link {
                 talk_static(value.as_deref())
@@ -108,7 +109,7 @@ fn tap_relay(secret: &str) -> Result<()> {
 
     let (rtc, answer) = peer::build_answerer(candidates, offer).context("build answerer")?;
     let answer_b64 = signal::encode_answer(&answer).context("encode answer")?;
-    relay.put_answer(&code, &answer_b64).context("upload answer")?;
+    relay.put_knot_tie(&code, &answer_b64).context("upload knot-tie")?;
 
     println!("Connecting...");
     let rx = chat::spawn_input_thread();
@@ -130,7 +131,7 @@ fn talk_relay(secret: &str) -> Result<()> {
 
             let (rtc, answer) = peer::build_answerer(candidates, offer).context("build answerer")?;
             let answer_b64 = signal::encode_answer(&answer).context("encode answer")?;
-            relay.put_answer(&code, &answer_b64).context("upload answer")?;
+            relay.put_knot_tie(&code, &answer_b64).context("upload knot-tie")?;
 
             println!("Connecting...");
             let rx = chat::spawn_input_thread();
@@ -266,7 +267,7 @@ fn poll_for_answer(relay: &relay::RelayClient, code: &str) -> Result<String> {
     io::stdout().flush().ok();
     loop {
         thread::sleep(Duration::from_secs(2));
-        match relay.poll_answer(code).context("poll for answer")? {
+        match relay.poll_knot_tie(code).context("poll for knot-tie")? {
             Some(b64) => {
                 println!();
                 return Ok(b64);
@@ -286,4 +287,87 @@ fn read_line() -> Result<String> {
     let mut line = String::new();
     stdin.lock().read_line(&mut line).context("read from stdin")?;
     Ok(line.trim().to_string())
+}
+
+// ── Upgrade command ───────────────────────────────────────────────────────────
+
+#[derive(serde::Deserialize)]
+struct GithubEntry {
+    name: String,
+}
+
+fn cmd_upgrade() -> Result<()> {
+    let current_hash = env!("GIT_HASH");
+    let os = match std::env::consts::OS {
+        "macos" => "darwin",
+        other => other,
+    };
+    let arch = match std::env::consts::ARCH {
+        "x86_64" => "amd64",
+        "aarch64" => "arm64",
+        other => other,
+    };
+    let prefix = format!("tin-can-{}-{}-", os, arch);
+
+    println!("Checking for updates (current: {})...", current_hash);
+
+    let client = reqwest::blocking::Client::builder()
+        .user_agent("tin-can-upgrade")
+        .timeout(Duration::from_secs(30))
+        .build()
+        .context("build HTTP client")?;
+
+    let entries: Vec<GithubEntry> = client
+        .get("https://api.github.com/repos/danlafeir/tin-can/contents/bin")
+        .send()
+        .context("query GitHub API")?
+        .error_for_status()
+        .context("GitHub API error")?
+        .json()
+        .context("parse GitHub API response")?;
+
+    let mut matches: Vec<&GithubEntry> = entries
+        .iter()
+        .filter(|e| e.name.starts_with(&prefix))
+        .collect();
+    matches.sort_by(|a, b| a.name.cmp(&b.name));
+
+    let latest = matches
+        .last()
+        .ok_or_else(|| anyhow::anyhow!("no binary found for {}-{}", os, arch))?;
+
+    let latest_hash = latest.name.rsplit('-').next().unwrap_or("");
+    if latest_hash == current_hash {
+        println!("Already up to date ({}).", current_hash);
+        return Ok(());
+    }
+
+    println!("Downloading {}...", latest.name);
+    let url = format!(
+        "https://raw.githubusercontent.com/danlafeir/tin-can/main/bin/{}",
+        latest.name
+    );
+    let bytes = client
+        .get(&url)
+        .send()
+        .context("download binary")?
+        .error_for_status()
+        .context("download failed")?
+        .bytes()
+        .context("read response")?;
+
+    let current_exe = std::env::current_exe().context("locate current binary")?;
+    let tmp = current_exe.with_extension("tmp");
+    std::fs::write(&tmp, &bytes).context("write new binary")?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755))
+            .context("set executable bit")?;
+    }
+
+    std::fs::rename(&tmp, &current_exe).context("replace binary")?;
+    println!("Updated: {} → {}.", current_hash, latest_hash);
+    Ok(())
 }

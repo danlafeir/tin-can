@@ -8,6 +8,16 @@ Both peers agree on a shared secret. One starts the session, the other joins wit
 
 ## Install
 
+**Quick install (macOS / Linux):**
+
+```sh
+curl -sSL https://raw.githubusercontent.com/danlafeir/tin-can/main/scripts/install.sh | sh
+```
+
+Installs the latest release binary to `~/.local/bin/tin-can`. To upgrade an existing install, run `tin-can upgrade`.
+
+---
+
 **Prerequisites (macOS):**
 
 ```sh
