@@ -2,6 +2,7 @@ mod audio;
 mod chat;
 mod cli;
 mod ice;
+mod morse;
 mod peer;
 mod relay;
 mod signal;
@@ -37,18 +38,18 @@ fn main() -> Result<()> {
                 attach_string_relay(&s)
             }
         }
-        Commands::Text { static_link, value } => {
+        Commands::Tap { static_link, value } => {
             if static_link {
                 let url = value.context(
-                    "provide the offer URL from your peer, e.g.: tin-can text --static-link \"https://...\"",
+                    "provide the offer URL from your peer, e.g.: tin-can tap --static-link \"https://...\"",
                 )?;
-                text_static(&url)
+                tap_static(&url)
             } else {
                 let s = value.context(
-                    "provide a shared secret, e.g.: tin-can text \"my secret\"\n\
+                    "provide a shared secret, e.g.: tin-can tap \"my secret\"\n\
                      Or use --static-link with an offer URL",
                 )?;
-                text_relay(&s)
+                tap_relay(&s)
             }
         }
         Commands::Talk { static_link, value } => {
@@ -82,7 +83,7 @@ fn attach_string_relay(secret: &str) -> Result<()> {
     relay.upload_offer(&code, &offer_b64).context("upload offer")?;
 
     println!("\nWaiting for peer... Tell them to run:");
-    println!("  tin-can text {:?}", secret);
+    println!("  tin-can tap {:?}", secret);
 
     let answer_b64 = poll_for_answer(&relay, &code)?;
     let answer = signal::decode_answer(&answer_b64).context("decode answer")?;
@@ -93,7 +94,7 @@ fn attach_string_relay(secret: &str) -> Result<()> {
     peer::run(rtc, socket, local_addr, rx, None)
 }
 
-fn text_relay(secret: &str) -> Result<()> {
+fn tap_relay(secret: &str) -> Result<()> {
     let code = signal::derive_room_code(secret);
     let relay = relay::RelayClient::new();
 
@@ -175,7 +176,7 @@ fn attach_string_static() -> Result<()> {
     println!("\nShare this URL with your peer:");
     println!("  {}", offer_url);
     println!("\nThey can open it in a browser or run:");
-    println!("  tin-can text --static-link \"{}\"", offer_url);
+    println!("  tin-can tap --static-link \"{}\"", offer_url);
     println!("\nPaste their answer URL (or base64) here and press Enter:");
 
     let answer_input = read_line()?;
@@ -187,9 +188,9 @@ fn attach_string_static() -> Result<()> {
     peer::run(rtc, socket, local_addr, rx, None)
 }
 
-fn text_static(url: &str) -> Result<()> {
+fn tap_static(url: &str) -> Result<()> {
     if !url.starts_with("http://") && !url.starts_with("https://") {
-        bail!("expected a URL, got: {url}\nDid you mean: tin-can text {:?}", url);
+        bail!("expected a URL, got: {url}\nDid you mean: tin-can tap {:?}", url);
     }
 
     let offer = signal::offer_from_url(url).context("decode offer from URL")?;

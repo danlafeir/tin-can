@@ -9,6 +9,7 @@ use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc};
 use tracing::{debug, info, warn};
 
 use crate::audio::AudioPipeline;
+use crate::morse;
 
 const AUDIO_TICK: Duration = Duration::from_millis(20);
 
@@ -54,8 +55,10 @@ pub fn run(
             loop {
                 match rx.try_recv() {
                     Ok(Some(msg)) => {
+                        let morse = morse::encode(&msg);
+                        println!("[→] {}", morse);
                         if let Some(mut ch) = rtc.channel(cid) {
-                            ch.write(false, msg.as_bytes()).context("send text")?;
+                            ch.write(false, morse.as_bytes()).context("send text")?;
                         }
                     }
                     Ok(None) => return Ok(()), // user quit
@@ -154,8 +157,10 @@ fn handle_event(
                 if let Some(ref mut a) = audio {
                     a.decode_and_queue(&data.data).context("decode audio")?;
                 }
-            } else if let Ok(msg) = std::str::from_utf8(&data.data) {
-                println!("[peer] {}", msg);
+            } else if let Ok(morse) = std::str::from_utf8(&data.data) {
+                let text = morse::decode(morse);
+                println!("[←] {}", morse);
+                println!("[peer] {}", text);
             }
         }
         Event::ChannelClose(cid) => {

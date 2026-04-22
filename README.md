@@ -53,7 +53,7 @@ Both peers just need to agree on a secret phrase — say it over the phone, text
 tin-can attach-string "our secret phrase"
 
 # Peer B — join it
-tin-can text "our secret phrase"
+tin-can tap "our secret phrase"
 ```
 
 Peer A prints a message telling them to wait. Once Peer B runs their command, both are connected.
@@ -83,7 +83,7 @@ Alice                                     Bob
   │   hashes secret → room code            │
   │   generates SDP offer                  │
   │   uploads offer to lafeir.com ──────►  │
-  │   polls for answer...           tin-can text "secret"
+  │   polls for answer...           tin-can tap "secret"
   │                                 hashes secret → same room code
   │                                 fetches offer from lafeir.com
   │                                 generates SDP answer

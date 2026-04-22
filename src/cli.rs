@@ -23,8 +23,8 @@ pub enum Commands {
         secret: Option<String>,
     },
 
-    /// Join a text chat session
-    Text {
+    /// Send a text message as Morse code and receive decoded replies
+    Tap {
         /// Use copy/paste URL signaling via daniellafeir.com instead of the relay
         #[arg(long)]
         static_link: bool,
