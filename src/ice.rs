@@ -12,7 +12,17 @@ const STUN_TIMEOUT: Duration = Duration::from_secs(3);
 /// Returns the socket (to be used for the WebRTC loop) and the candidate list.
 pub fn gather() -> Result<(UdpSocket, Vec<Candidate>)> {
     let socket = UdpSocket::bind("0.0.0.0:0").context("bind UDP socket")?;
-    let local_addr = socket.local_addr().context("get local addr")?;
+    let port = socket.local_addr().context("get local addr")?.port();
+
+    // Discover the outbound interface IP — connecting a UDP socket doesn't
+    // send any packets, but causes the OS to resolve the route and fill in
+    // the source address.
+    let local_ip = {
+        let probe = UdpSocket::bind("0.0.0.0:0").context("bind probe socket")?;
+        probe.connect("8.8.8.8:80").context("connect probe")?;
+        probe.local_addr().context("probe local addr")?.ip()
+    };
+    let local_addr = SocketAddr::new(local_ip, port);
     debug!("bound UDP socket on {}", local_addr);
 
     let mut candidates = Vec::new();

@@ -6,13 +6,11 @@ mod peer;
 mod relay;
 mod signal;
 
-use std::thread;
-use std::time::Duration;
+use std::io::{self, BufRead, Write};
 
 use anyhow::{Context, Result};
 use clap::Parser;
 use cli::{Cli, Commands};
-use tracing::info;
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -42,25 +40,57 @@ fn cmd_attach_string() -> Result<()> {
     let (mut rtc, offer, pending, _cid) =
         peer::build_offerer(candidates, "tin-can:text").context("build offerer")?;
 
-    let offer_b64 = signal::encode_offer(&offer).context("encode offer")?;
+    let offer_url = signal::offer_to_url(&offer).context("encode offer URL")?;
 
-    println!("Registering room with relay...");
-    let relay = relay::RelayClient::new();
-    let code = relay.create_room(&offer_b64).context("create room")?;
+    println!("\nShare this URL with your peer:");
+    println!("  {}", offer_url);
+    println!("\nThey can open it in a browser or run:");
+    println!("  tin-can join \"{}\"", offer_url);
+    println!("\nPaste their answer URL (or base64) here and press Enter:");
 
-    println!("\nRoom code: {}", code);
-    println!("Tell your peer to run:  tin-can join {}", code);
-    println!("\nWaiting for peer to join...");
+    let answer_input = read_line()?;
+    let answer = signal::answer_from_input(&answer_input).context("decode answer")?;
 
-    let answer_b64 = poll_for_answer(&relay, &code)?;
-    let answer = signal::decode_answer(&answer_b64).context("decode answer")?;
-    rtc.sdp_api().accept_answer(pending, answer).context("accept answer")?;
+    rtc.sdp_api()
+        .accept_answer(pending, answer)
+        .context("accept answer")?;
+
+    println!("Connecting...");
+    let rx = chat::spawn_input_thread();
+    peer::run(rtc, socket, local_addr, rx, None)
+}
+
+fn cmd_join(input: &str) -> Result<()> {
+    if input.starts_with("http://") || input.starts_with("https://") {
+        join_from_url(input)
+    } else {
+        join_from_code(input)
+    }
+}
+
+/// Join using a daniellafeir.com/can/#o=... URL (no relay needed).
+fn join_from_url(url: &str) -> Result<()> {
+    let offer = signal::offer_from_url(url).context("decode offer from URL")?;
+
+    println!("Gathering network candidates...");
+    let (socket, candidates) = ice::gather().context("ICE gather")?;
+    let local_addr = socket.local_addr()?;
+
+    let (rtc, answer) = peer::build_answerer(candidates, offer).context("build answerer")?;
+
+    let answer_url = signal::answer_to_url(&answer).context("encode answer URL")?;
+
+    println!("\nSend this URL back to your peer:");
+    println!("  {}", answer_url);
+    println!("\n(They paste it into their waiting prompt to complete the connection.)");
+    println!("\nConnecting — waiting for peer to accept...");
 
     let rx = chat::spawn_input_thread();
     peer::run(rtc, socket, local_addr, rx, None)
 }
 
-fn cmd_join(code: &str) -> Result<()> {
+/// Join using a relay room code (requires relay backend to be deployed).
+fn join_from_code(code: &str) -> Result<()> {
     println!("Fetching room {}...", code);
     let relay = relay::RelayClient::new();
     let offer_b64 = relay.get_offer(code).context("fetch offer")?;
@@ -75,7 +105,6 @@ fn cmd_join(code: &str) -> Result<()> {
     relay.put_answer(code, &answer_b64).context("upload answer")?;
 
     println!("Answer sent. Connecting...");
-
     let rx = chat::spawn_input_thread();
     peer::run(rtc, socket, local_addr, rx, None)
 }
@@ -87,7 +116,7 @@ fn cmd_talk(code: Option<&str>) -> Result<()> {
 
     match code {
         None => talk_create(audio),
-        Some(code) => talk_join(code, audio),
+        Some(c) => talk_join(c, audio),
     }
 }
 
@@ -99,60 +128,62 @@ fn talk_create(audio: audio::AudioPipeline) -> Result<()> {
     let (mut rtc, offer, pending, _cid) =
         peer::build_offerer(candidates, "tin-can:voice").context("build offerer")?;
 
-    let offer_b64 = signal::encode_offer(&offer).context("encode offer")?;
+    let offer_url = signal::offer_to_url(&offer).context("encode offer URL")?;
 
-    println!("Registering room with relay...");
-    let relay = relay::RelayClient::new();
-    let code = relay.create_room(&offer_b64).context("create room")?;
+    println!("\nShare this URL with your peer:");
+    println!("  {}", offer_url);
+    println!("\nThey can open it in a browser or run:");
+    println!("  tin-can join \"{}\"", offer_url);
+    println!("\nPaste their answer URL (or base64) here and press Enter:");
 
-    println!("\nRoom code: {}", code);
-    println!("Tell your peer to run:  tin-can talk {}", code);
-    println!("\nWaiting for peer to join...");
+    let answer_input = read_line()?;
+    let answer = signal::answer_from_input(&answer_input).context("decode answer")?;
 
-    let answer_b64 = poll_for_answer(&relay, &code)?;
-    let answer = signal::decode_answer(&answer_b64).context("decode answer")?;
-    rtc.sdp_api().accept_answer(pending, answer).context("accept answer")?;
+    rtc.sdp_api()
+        .accept_answer(pending, answer)
+        .context("accept answer")?;
 
+    println!("Connecting...");
     let rx = chat::spawn_input_thread();
     peer::run(rtc, socket, local_addr, rx, Some(audio))
 }
 
-fn talk_join(code: &str, audio: audio::AudioPipeline) -> Result<()> {
-    println!("Fetching room {}...", code);
-    let relay = relay::RelayClient::new();
-    let offer_b64 = relay.get_offer(code).context("fetch offer")?;
-    let offer = signal::decode_offer(&offer_b64).context("decode offer")?;
+fn talk_join(input: &str, audio: audio::AudioPipeline) -> Result<()> {
+    let offer = if input.starts_with("http://") || input.starts_with("https://") {
+        signal::offer_from_url(input).context("decode offer from URL")?
+    } else {
+        // Relay-based: fetch offer by code
+        let relay = relay::RelayClient::new();
+        let b64 = relay.get_offer(input).context("fetch offer")?;
+        signal::decode_offer(&b64).context("decode offer")?
+    };
 
     println!("Gathering network candidates...");
     let (socket, candidates) = ice::gather().context("ICE gather")?;
     let local_addr = socket.local_addr()?;
 
     let (rtc, answer) = peer::build_answerer(candidates, offer).context("build answerer")?;
-    let answer_b64 = signal::encode_answer(&answer).context("encode answer")?;
-    relay.put_answer(code, &answer_b64).context("upload answer")?;
+    let answer_url = signal::answer_to_url(&answer).context("encode answer URL")?;
 
-    println!("Answer sent. Connecting...");
+    println!("\nSend this URL back to your peer:");
+    println!("  {}", answer_url);
+    println!("\nConnecting — waiting for peer to accept...");
 
     let rx = chat::spawn_input_thread();
     peer::run(rtc, socket, local_addr, rx, Some(audio))
 }
 
-// ── Shared helper ─────────────────────────────────────────────────────────────
+// ── Shared helpers ────────────────────────────────────────────────────────────
 
-fn poll_for_answer(relay: &relay::RelayClient, code: &str) -> Result<String> {
-    loop {
-        thread::sleep(Duration::from_secs(2));
-        match relay.poll_answer(code).context("poll for answer")? {
-            Some(b64) => {
-                println!();
-                info!("received answer from peer");
-                return Ok(b64);
-            }
-            None => {
-                print!(".");
-                use std::io::Write;
-                std::io::stdout().flush().ok();
-            }
-        }
-    }
+fn read_line() -> Result<String> {
+    print!("> ");
+    io::stdout().flush().ok();
+    let stdin = io::stdin();
+    let mut line = String::new();
+    stdin
+        .lock()
+        .read_line(&mut line)
+        .context("read from stdin")?;
+    Ok(line.trim().to_string())
 }
+
