@@ -1,11 +1,11 @@
 mod audio;
-mod chat;
 mod cli;
 mod ice;
 mod morse;
 mod peer;
 mod relay;
 mod signal;
+mod ui;
 
 use std::io::{self, BufRead, Write};
 use std::thread;
@@ -89,8 +89,9 @@ fn attach_string_relay(secret: &str) -> Result<()> {
             println!("  knot-tie sent to relay");
 
             println!("Connecting...");
-            let rx = chat::spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, None, true)
+            let ui = ui::ChatUi::new().context("setup terminal UI")?;
+            let rx = ui.spawn_input_thread();
+            peer::run(rtc, socket, local_addr, rx, None, true, ui)
         }
         None => {
             println!("No session found — starting as offerer. Gathering network candidates...");
@@ -112,8 +113,9 @@ fn attach_string_relay(secret: &str) -> Result<()> {
             rtc.sdp_api().accept_answer(pending, answer).context("accept answer")?;
 
             println!("Connected!");
-            let rx = chat::spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, None, false)
+            let ui = ui::ChatUi::new().context("setup terminal UI")?;
+            let rx = ui.spawn_input_thread();
+            peer::run(rtc, socket, local_addr, rx, None, false, ui)
         }
     }
 }
@@ -138,8 +140,9 @@ fn tap_relay(secret: &str) -> Result<()> {
             println!("  knot-tie sent to relay");
 
             println!("Connecting...");
-            let rx = chat::spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, None, true)
+            let ui = ui::ChatUi::new().context("setup terminal UI")?;
+            let rx = ui.spawn_input_thread();
+            peer::run(rtc, socket, local_addr, rx, None, true, ui)
         }
         None => {
             println!("No session found — starting as offerer. Gathering network candidates...");
@@ -161,8 +164,9 @@ fn tap_relay(secret: &str) -> Result<()> {
             rtc.sdp_api().accept_answer(pending, answer).context("accept answer")?;
 
             println!("Connected!");
-            let rx = chat::spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, None, false)
+            let ui = ui::ChatUi::new().context("setup terminal UI")?;
+            let rx = ui.spawn_input_thread();
+            peer::run(rtc, socket, local_addr, rx, None, false, ui)
         }
     }
 }
@@ -188,8 +192,9 @@ fn talk_relay(secret: &str) -> Result<()> {
             println!("  knot-tie sent to relay");
 
             println!("Connecting...");
-            let rx = chat::spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, Some(audio), true)
+            let ui = ui::ChatUi::new().context("setup terminal UI")?;
+            let rx = ui.spawn_input_thread();
+            peer::run(rtc, socket, local_addr, rx, Some(audio), true, ui)
         }
         None => {
             println!("No session found — starting as offerer. Gathering network candidates...");
@@ -211,8 +216,9 @@ fn talk_relay(secret: &str) -> Result<()> {
             rtc.sdp_api().accept_answer(pending, answer).context("accept answer")?;
 
             println!("Connected!");
-            let rx = chat::spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, Some(audio), false)
+            let ui = ui::ChatUi::new().context("setup terminal UI")?;
+            let rx = ui.spawn_input_thread();
+            peer::run(rtc, socket, local_addr, rx, Some(audio), false, ui)
         }
     }
 }
@@ -239,8 +245,9 @@ fn attach_string_static() -> Result<()> {
     rtc.sdp_api().accept_answer(pending, answer).context("accept answer")?;
 
     println!("Connecting...");
-    let rx = chat::spawn_input_thread();
-    peer::run(rtc, socket, local_addr, rx, None, false)
+    let ui = ui::ChatUi::new().context("setup terminal UI")?;
+            let rx = ui.spawn_input_thread();
+    peer::run(rtc, socket, local_addr, rx, None, false, ui)
 }
 
 fn tap_static(url: &str) -> Result<()> {
@@ -261,8 +268,9 @@ fn tap_static(url: &str) -> Result<()> {
     println!("\n(They paste it into their waiting prompt to complete the connection.)");
     println!("\nConnecting — waiting for peer to accept...");
 
-    let rx = chat::spawn_input_thread();
-    peer::run(rtc, socket, local_addr, rx, None, true)
+    let ui = ui::ChatUi::new().context("setup terminal UI")?;
+            let rx = ui.spawn_input_thread();
+    peer::run(rtc, socket, local_addr, rx, None, true, ui)
 }
 
 fn talk_static(url: Option<&str>) -> Result<()> {
@@ -289,8 +297,9 @@ fn talk_static(url: Option<&str>) -> Result<()> {
             rtc.sdp_api().accept_answer(pending, answer).context("accept answer")?;
 
             println!("Connecting...");
-            let rx = chat::spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, Some(audio), false)
+            let ui = ui::ChatUi::new().context("setup terminal UI")?;
+            let rx = ui.spawn_input_thread();
+            peer::run(rtc, socket, local_addr, rx, Some(audio), false, ui)
         }
         Some(url) => {
             let offer = signal::offer_from_url(url).context("decode offer from URL")?;
@@ -305,8 +314,9 @@ fn talk_static(url: Option<&str>) -> Result<()> {
             println!("  {}", answer_url);
             println!("\nConnecting — waiting for peer to accept...");
 
-            let rx = chat::spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, Some(audio), true)
+            let ui = ui::ChatUi::new().context("setup terminal UI")?;
+            let rx = ui.spawn_input_thread();
+            peer::run(rtc, socket, local_addr, rx, Some(audio), true, ui)
         }
     }
 }

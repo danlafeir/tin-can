@@ -10,13 +10,10 @@ use tracing::{debug, info, warn};
 
 use crate::audio::AudioPipeline;
 use crate::morse;
+use crate::ui::ChatUi;
 
 const AUDIO_TICK: Duration = Duration::from_millis(20);
 
-/// Drive a connected `Rtc` instance through ICE → DTLS → channel open → chat/voice.
-///
-/// `rx` receives outgoing text messages from the input thread (None = user quit).
-/// `audio` is Some when running in voice mode — the pipeline encodes/decodes Opus.
 pub fn run(
     mut rtc: Rtc,
     socket: UdpSocket,
@@ -24,6 +21,7 @@ pub fn run(
     rx: mpsc::Receiver<Option<String>>,
     mut audio: Option<AudioPipeline>,
     is_answerer: bool,
+    ui: ChatUi,
 ) -> Result<()> {
     let mut buf = vec![0u8; 2000];
     let mut channel: Option<ChannelId> = None;
@@ -40,7 +38,7 @@ pub fn run(
                         .context("UDP send")?;
                 }
                 Output::Event(event) => {
-                    handle_event(event, &mut channel, &mut connected, &mut audio, is_answerer)?;
+                    handle_event(event, &mut channel, &mut connected, &mut audio, is_answerer, &ui)?;
                 }
                 Output::Timeout(deadline) => break deadline,
             }
@@ -57,10 +55,13 @@ pub fn run(
                 match rx.try_recv() {
                     Ok(Some(msg)) => {
                         let morse = morse::encode(&msg);
-                        println!("[→] {}", morse);
                         if let Some(mut ch) = rtc.channel(cid) {
                             ch.write(false, morse.as_bytes()).context("send text")?;
                         }
+                        ui.print_message(&[
+                            format!("\x1b[1m[you]>\x1b[0m {}", msg),
+                            format!("  \x1b[1m→\x1b[0m m[{}]", morse),
+                        ]);
                     }
                     Ok(None) => return Ok(()), // user quit
                     Err(mpsc::TryRecvError::Empty) => break,
@@ -132,6 +133,7 @@ fn handle_event(
     connected: &mut bool,
     audio: &mut Option<AudioPipeline>,
     is_answerer: bool,
+    ui: &ChatUi,
 ) -> Result<()> {
     match event {
         Event::Connected => {
@@ -147,25 +149,31 @@ fn handle_event(
         Event::ChannelOpen(cid, label) => {
             info!("channel open: '{}' ({:?})", label, cid);
             *channel = Some(cid);
-            if is_answerer {
-                let mode = if label.contains("voice") { "talk (voice call)" } else { "tap (morse text)" };
-                println!("Your peer wants to {}. Type a message to accept and start, or Ctrl-D to exit.\n", mode);
+            let msg = if is_answerer {
+                let mode = if label.contains("voice") {
+                    "talk (voice call)"
+                } else {
+                    "tap (morse text)"
+                };
+                format!("Your peer wants to {}. Type to start, Ctrl-D to exit.", mode)
             } else if audio.is_some() {
-                println!("Connected! Speak freely. Type a message to send text. Ctrl-D or /quit to exit.\n");
+                "Connected! Speak freely. Type to send text. Ctrl-D to exit.".to_string()
             } else {
-                println!("Connected! Type a message and press Enter. Ctrl-D or /quit to exit.\n");
-            }
+                "Connected! Ctrl-D to exit.".to_string()
+            };
+            ui.print_message(&[msg]);
         }
         Event::ChannelData(data) => {
             if data.binary {
-                // Opus audio packet
                 if let Some(ref mut a) = audio {
                     a.decode_and_queue(&data.data).context("decode audio")?;
                 }
             } else if let Ok(morse) = std::str::from_utf8(&data.data) {
                 let text = morse::decode(morse);
-                println!("[←] {}", morse);
-                println!("[peer] {}", text);
+                ui.print_message(&[
+                    format!("  \x1b[1m←\x1b[0m m[{}]", morse),
+                    format!("\x1b[1m[friend]>\x1b[0m {}", text),
+                ]);
             }
         }
         Event::ChannelClose(cid) => {
@@ -179,8 +187,6 @@ fn handle_event(
     Ok(())
 }
 
-/// Build the offerer's Rtc: add candidates, create a data channel, return the
-/// SDP offer and pending state.
 pub fn build_offerer(
     candidates: Vec<Candidate>,
     label: &str,
@@ -197,7 +203,6 @@ pub fn build_offerer(
     Ok((rtc, offer, pending, cid))
 }
 
-/// Build the answerer's Rtc: accept the offer and return the SDP answer.
 pub fn build_answerer(
     candidates: Vec<Candidate>,
     offer: str0m::change::SdpOffer,

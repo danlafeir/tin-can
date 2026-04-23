@@ -11,7 +11,7 @@ pub fn spawn_input_thread() -> mpsc::Receiver<Option<String>> {
         let mut lines = stdin.lock().lines();
 
         loop {
-            print!("> ");
+            print!("\x1b[1m[you]>\x1b[0m ");
             io::stdout().flush().ok();
 
             match lines.next() {
