@@ -3,7 +3,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use str0m::channel::ChannelId;
+use str0m::channel::{ChannelConfig, ChannelId, Reliability};
 use str0m::net::{Protocol, Receive};
 use str0m::{Candidate, Event, IceConnectionState, Input, Output, Rtc};
 use tracing::{debug, info, warn};
@@ -283,7 +283,16 @@ pub fn build_offerer(
         rtc.add_local_candidate(c);
     }
     let mut change = rtc.sdp_api();
-    let cid = change.add_channel(label.to_string());
+    let cid = if label.ends_with(":voice") {
+        change.add_channel_with_config(ChannelConfig {
+            label: label.to_string(),
+            ordered: false,
+            reliability: Reliability::MaxRetransmits { retransmits: 0 },
+            ..Default::default()
+        })
+    } else {
+        change.add_channel(label.to_string())
+    };
     let (offer, pending) = change
         .apply()
         .context("failed to generate SDP offer — no changes applied")?;
