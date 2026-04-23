@@ -14,19 +14,27 @@ use crate::ui::ChatUi;
 
 const AUDIO_TICK: Duration = Duration::from_millis(20);
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ChatMode {
+    Control, // attach-string: pipe only, mode chosen in-session
+    Text,    // tap: morse text
+    Voice,   // talk: voice call
+}
+
 pub fn run(
     mut rtc: Rtc,
     socket: UdpSocket,
     local_addr: SocketAddr,
     rx: mpsc::Receiver<Option<String>>,
+    mut mode: ChatMode,
     mut audio: Option<AudioPipeline>,
-    is_answerer: bool,
     ui: ChatUi,
 ) -> Result<()> {
     let mut buf = vec![0u8; 2000];
     let mut channel: Option<ChannelId> = None;
     let mut connected = false;
     let mut next_audio_tick = Instant::now() + AUDIO_TICK;
+    let mut mode_announced = false;
 
     loop {
         // ── Drain all pending outputs ────────────────────────────────────────
@@ -38,7 +46,7 @@ pub fn run(
                         .context("UDP send")?;
                 }
                 Output::Event(event) => {
-                    handle_event(event, &mut channel, &mut connected, &mut audio, is_answerer, &ui)?;
+                    handle_event(event, &mut channel, &mut connected, &mut mode, &mut audio, &ui)?;
                 }
                 Output::Timeout(deadline) => break deadline,
             }
@@ -49,21 +57,75 @@ pub fn run(
             break;
         }
 
-        // ── Outgoing text from the input thread ──────────────────────────────
+        // ── Announce mode once after channel opens ───────────────────────────
+        // Text and Voice peers send a control prefix so the attach-string peer
+        // knows which mode to enter.
+        if !mode_announced {
+            if let Some(cid) = channel {
+                let ctrl: Option<&[u8]> = match mode {
+                    ChatMode::Text => Some(b"::tap"),
+                    ChatMode::Voice => Some(b"::talk"),
+                    ChatMode::Control => None,
+                };
+                if let Some(msg) = ctrl {
+                    if let Some(mut ch) = rtc.channel(cid) {
+                        ch.write(false, msg).context("send mode announcement")?;
+                    }
+                }
+                mode_announced = true;
+            }
+        }
+
+        // ── Outgoing messages / commands from the input thread ───────────────
         if let Some(cid) = channel {
             loop {
                 match rx.try_recv() {
-                    Ok(Some(msg)) => {
-                        let morse = morse::encode(&msg);
-                        if let Some(mut ch) = rtc.channel(cid) {
-                            ch.write(false, morse.as_bytes()).context("send text")?;
+                    Ok(Some(msg)) => match mode {
+                        ChatMode::Control => match msg.trim() {
+                            "tap" => {
+                                if let Some(mut ch) = rtc.channel(cid) {
+                                    ch.write(false, b"::tap").context("send tap")?;
+                                }
+                                mode = ChatMode::Text;
+                                ui.print_message(&[
+                                    "Switching to tap mode. Type a message.".to_string(),
+                                ]);
+                            }
+                            "talk" => {
+                                if let Some(mut ch) = rtc.channel(cid) {
+                                    ch.write(false, b"::talk").context("send talk")?;
+                                }
+                                match AudioPipeline::new() {
+                                    Ok(a) => {
+                                        audio = Some(a);
+                                        mode = ChatMode::Voice;
+                                        ui.print_message(&[
+                                            "Switching to talk mode. Speak freely.".to_string(),
+                                        ]);
+                                    }
+                                    Err(e) => {
+                                        ui.print_message(&[format!("Audio failed: {}", e)]);
+                                    }
+                                }
+                            }
+                            _ => {
+                                ui.print_message(&[
+                                    "Type 'tap' for text chat or 'talk' for voice.".to_string(),
+                                ]);
+                            }
+                        },
+                        ChatMode::Text | ChatMode::Voice => {
+                            let morse = morse::encode(&msg);
+                            if let Some(mut ch) = rtc.channel(cid) {
+                                ch.write(false, morse.as_bytes()).context("send text")?;
+                            }
+                            ui.print_message(&[
+                                format!("\x1b[1m[you]>\x1b[0m {}", msg),
+                                format!("  \x1b[1m→\x1b[0m m[{}]", morse),
+                            ]);
                         }
-                        ui.print_message(&[
-                            format!("\x1b[1m[you]>\x1b[0m {}", msg),
-                            format!("  \x1b[1m→\x1b[0m m[{}]", morse),
-                        ]);
-                    }
-                    Ok(None) => return Ok(()), // user quit
+                    },
+                    Ok(None) => return Ok(()),
                     Err(mpsc::TryRecvError::Empty) => break,
                     Err(mpsc::TryRecvError::Disconnected) => return Ok(()),
                 }
@@ -131,8 +193,8 @@ fn handle_event(
     event: Event,
     channel: &mut Option<ChannelId>,
     connected: &mut bool,
+    mode: &mut ChatMode,
     audio: &mut Option<AudioPipeline>,
-    is_answerer: bool,
     ui: &ChatUi,
 ) -> Result<()> {
     match event {
@@ -149,17 +211,14 @@ fn handle_event(
         Event::ChannelOpen(cid, label) => {
             info!("channel open: '{}' ({:?})", label, cid);
             *channel = Some(cid);
-            let msg = if is_answerer {
-                let mode = if label.contains("voice") {
-                    "talk (voice call)"
-                } else {
-                    "tap (morse text)"
-                };
-                format!("Your peer wants to {}. Type to start, Ctrl-D to exit.", mode)
-            } else if audio.is_some() {
-                "Connected! Speak freely. Type to send text. Ctrl-D to exit.".to_string()
-            } else {
-                "Connected! Ctrl-D to exit.".to_string()
+            let msg = match mode {
+                ChatMode::Control => {
+                    "Connected. Type 'tap' for text chat or 'talk' for voice.".to_string()
+                }
+                ChatMode::Text => "Connected! Type a message. Ctrl-D to exit.".to_string(),
+                ChatMode::Voice => {
+                    "Connected! Speak freely. Type to send text. Ctrl-D to exit.".to_string()
+                }
             };
             ui.print_message(&[msg]);
         }
@@ -168,12 +227,40 @@ fn handle_event(
                 if let Some(ref mut a) = audio {
                     a.decode_and_queue(&data.data).context("decode audio")?;
                 }
-            } else if let Ok(morse) = std::str::from_utf8(&data.data) {
-                let text = morse::decode(morse);
-                ui.print_message(&[
-                    format!("  \x1b[1m←\x1b[0m m[{}]", morse),
-                    format!("\x1b[1m[friend]>\x1b[0m {}", text),
-                ]);
+            } else if let Ok(text) = std::str::from_utf8(&data.data) {
+                if let Some(ctrl) = text.strip_prefix("::") {
+                    match ctrl {
+                        "tap" => {
+                            *mode = ChatMode::Text;
+                            ui.print_message(&[
+                                "Peer wants to tap. Switching to text chat.".to_string(),
+                                "Type a message or Ctrl-D to exit.".to_string(),
+                            ]);
+                        }
+                        "talk" => {
+                            match AudioPipeline::new() {
+                                Ok(a) => {
+                                    *audio = Some(a);
+                                    *mode = ChatMode::Voice;
+                                    ui.print_message(&[
+                                        "Peer wants to talk. Switching to voice.".to_string(),
+                                        "Speak freely or Ctrl-D to exit.".to_string(),
+                                    ]);
+                                }
+                                Err(e) => {
+                                    ui.print_message(&[format!("Audio failed: {}", e)]);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                } else {
+                    let decoded = morse::decode(text);
+                    ui.print_message(&[
+                        format!("  \x1b[1m←\x1b[0m m[{}]", text),
+                        format!("\x1b[1m[friend]>\x1b[0m {}", decoded),
+                    ]);
+                }
             }
         }
         Event::ChannelClose(cid) => {

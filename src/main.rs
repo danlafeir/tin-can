@@ -91,7 +91,7 @@ fn attach_string_relay(secret: &str) -> Result<()> {
             println!("Connecting...");
             let ui = ui::ChatUi::new().context("setup terminal UI")?;
             let rx = ui.spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, None, true, ui)
+            peer::run(rtc, socket, local_addr, rx, peer::ChatMode::Control, None, ui)
         }
         None => {
             println!("No session found — starting as offerer. Gathering network candidates...");
@@ -115,7 +115,7 @@ fn attach_string_relay(secret: &str) -> Result<()> {
             println!("Connected!");
             let ui = ui::ChatUi::new().context("setup terminal UI")?;
             let rx = ui.spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, None, false, ui)
+            peer::run(rtc, socket, local_addr, rx, peer::ChatMode::Control, None, ui)
         }
     }
 }
@@ -142,7 +142,7 @@ fn tap_relay(secret: &str) -> Result<()> {
             println!("Connecting...");
             let ui = ui::ChatUi::new().context("setup terminal UI")?;
             let rx = ui.spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, None, true, ui)
+            peer::run(rtc, socket, local_addr, rx, peer::ChatMode::Text, None, ui)
         }
         None => {
             println!("No session found — starting as offerer. Gathering network candidates...");
@@ -166,7 +166,7 @@ fn tap_relay(secret: &str) -> Result<()> {
             println!("Connected!");
             let ui = ui::ChatUi::new().context("setup terminal UI")?;
             let rx = ui.spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, None, false, ui)
+            peer::run(rtc, socket, local_addr, rx, peer::ChatMode::Text, None, ui)
         }
     }
 }
@@ -194,7 +194,7 @@ fn talk_relay(secret: &str) -> Result<()> {
             println!("Connecting...");
             let ui = ui::ChatUi::new().context("setup terminal UI")?;
             let rx = ui.spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, Some(audio), true, ui)
+            peer::run(rtc, socket, local_addr, rx, peer::ChatMode::Voice, Some(audio), ui)
         }
         None => {
             println!("No session found — starting as offerer. Gathering network candidates...");
@@ -218,7 +218,7 @@ fn talk_relay(secret: &str) -> Result<()> {
             println!("Connected!");
             let ui = ui::ChatUi::new().context("setup terminal UI")?;
             let rx = ui.spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, Some(audio), false, ui)
+            peer::run(rtc, socket, local_addr, rx, peer::ChatMode::Voice, Some(audio), ui)
         }
     }
 }
@@ -247,7 +247,7 @@ fn attach_string_static() -> Result<()> {
     println!("Connecting...");
     let ui = ui::ChatUi::new().context("setup terminal UI")?;
             let rx = ui.spawn_input_thread();
-    peer::run(rtc, socket, local_addr, rx, None, false, ui)
+    peer::run(rtc, socket, local_addr, rx, peer::ChatMode::Control, None, ui)
 }
 
 fn tap_static(url: &str) -> Result<()> {
@@ -270,7 +270,7 @@ fn tap_static(url: &str) -> Result<()> {
 
     let ui = ui::ChatUi::new().context("setup terminal UI")?;
             let rx = ui.spawn_input_thread();
-    peer::run(rtc, socket, local_addr, rx, None, true, ui)
+    peer::run(rtc, socket, local_addr, rx, peer::ChatMode::Text, None, ui)
 }
 
 fn talk_static(url: Option<&str>) -> Result<()> {
@@ -299,7 +299,7 @@ fn talk_static(url: Option<&str>) -> Result<()> {
             println!("Connecting...");
             let ui = ui::ChatUi::new().context("setup terminal UI")?;
             let rx = ui.spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, Some(audio), false, ui)
+            peer::run(rtc, socket, local_addr, rx, peer::ChatMode::Voice, Some(audio), ui)
         }
         Some(url) => {
             let offer = signal::offer_from_url(url).context("decode offer from URL")?;
@@ -316,7 +316,7 @@ fn talk_static(url: Option<&str>) -> Result<()> {
 
             let ui = ui::ChatUi::new().context("setup terminal UI")?;
             let rx = ui.spawn_input_thread();
-            peer::run(rtc, socket, local_addr, rx, Some(audio), true, ui)
+            peer::run(rtc, socket, local_addr, rx, peer::ChatMode::Voice, Some(audio), ui)
         }
     }
 }
